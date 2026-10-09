@@ -281,19 +281,17 @@ int rotateRightBits(int x, int n) {
  *   Rating: 5
  */
 int roundEvenPow2(int x, int n) {
-    int shift = 1 << n;
-  int half = shift >> 1;
-  int mask = shift + (~1 + 1); // mask = shift - 1
-  int rem = x & mask;
-  int base = x & ~mask;
-  int diff = rem + (~half + 1); // rem - half
-
-  int remGtHalf = !(diff >> 31) & !!diff; 
-  int isHalf = !diff;                   
-  int qodd = (base >> n) & 1;             
-
-  int add = (remGtHalf | (isHalf & qodd)) & shift;
-  return base + add;
+    int m = 1 << n;
+    int half = m >> 1;
+    int q = x >> n;
+    int r = x & (m + ~0);
+    int diff = r + ~half + 1;       
+    int sign = diff >> 31;        
+    int eq = !diff;
+    int greater = (sign + 1) + ~eq + 1;  
+    int qOdd = q & 1;
+    int up = greater | (eq & qOdd);
+    return (q + up) << n;
 
 }
 
