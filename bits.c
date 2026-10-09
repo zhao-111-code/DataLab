@@ -210,13 +210,16 @@ int logicalShift(int x, int n) {
  *   Rating: 4
  */
 int swapNibblePairs(int x){
-int a = 0xF0;
-a = a | (a << 8);
-a = a | (a << 16);
-return ((x & a) >> 4) | ((x & ~a) << 4);
+int nibMask = 0x0F;
+    nibMask |= nibMask << 8;
+    nibMask |= nibMask << 16;
 
+    int lowNibbles = x & nibMask;
+    int highNibbles = x & (nibMask << 4);
 
-
+    int partA = lowNibbles << 4;
+    int partB = (highNibbles >> 4) & nibMask;
+    return partA | partB;
 }
 
 // P7
@@ -544,36 +547,22 @@ unsigned sign_bit = uf & 0x80000000u;
  *   Rating: 10
  */
 unsigned float_i2f(int x) {
-if (x == 0)
-        return 0u;
-    if (x == 0x80000000)
-        return 0xCF000000u;
-
-    unsigned s_out = x & 0x80000000u;
-    unsigned abs_val;
-    if (x < 0)
-        abs_val = (unsigned)(-x);
-    else
-        abs_val = (unsigned)x;
-
-    int exp_cnt = 0;
-    while ((abs_val & 0x80000000u) == 0) {
-        abs_val <<= 1;
-        exp_cnt -= 1;
+   if (x == 0) return 0u;
+    if (x == 0x80000000) return 0xCF000000u;
+    unsigned sign = x & 0x80000000u;
+    unsigned v;
+    if (x < 0) v = -x; else v = x;
+    int e = 0;
+    while ((v & 0x80000000u) == 0) { v <<= 1; e--; }
+    e += 31;
+    unsigned frac = (v >> 8) & 0x7FFFFFu;
+    unsigned rest = v & 0xFFu;
+    if ((rest > 0x80u) || (rest == 0x80u && (frac & 1u))) {
+        frac++;
+        if (frac >= 0x800000u) { frac = 0; e++; }
     }
-    exp_cnt = exp_cnt + 31;
-
-    unsigned frac_out = (abs_val >> 8) & 0x7FFFFFu;
-    unsigned tail_byte = abs_val & 0xFFu;
-
-    if ((tail_byte > 0x80u) || (tail_byte == 0x80u && (frac_out & 1u))) {
-        frac_out += 1u;
-        if (frac_out >= 0x800000u) {
-            frac_out = 0u;
-            exp_cnt += 1;
-        }
-    }
-    return s_out | (((unsigned)(exp_cnt + 127)) << 23) | frac_out;
+    return sign | ((e + 127) << 23) | frac;
+}
 }
 
 
