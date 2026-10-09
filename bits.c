@@ -308,12 +308,13 @@ int roundEvenPow2(int x, int n) {
  *   Rating: 5
  */
 int midpointTowardFirst(int x, int y) {
-      int xor = x ^ y;
-    int avg = (x & y) + (xor >> 1);
-    int lsb = xor & 1;
-    int signX = (x >> 31) & 1;
-    int adjust = lsb & signX;
-    return avg + adjust;
+    int base = (x & y) + ((x ^ y) >> 1);
+    int tie = (x ^ y) & 1;
+    int diff = x + ~y + 1;
+    int signsDiff = (x ^ y) >> 31;
+    int addSign = (signsDiff & (x >> 31)) | ((~signsDiff) & (diff >> 31));
+    int xGTy = addSign + 1;
+    return base + (tie & xGTy);
 
 }
 
