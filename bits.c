@@ -563,7 +563,6 @@ unsigned float_i2f(int x) {
     }
     return sign | ((e + 127) << 23) | frac;
 }
-}
 
 
 
