@@ -364,18 +364,21 @@ int isBetweenEitherOrder(int x, int a, int b) {
  *   Rating: 7
  */
 int mul5Sat(int x) {
- int twoX = x + x;
-    int fiveX = twoX + (x << 2);
-    int signX = x >> 31;
-    int cond1 = ((x ^ fiveX) >> 31);
-    int condPos = (~signX) & ((x >> 30) + ~0);
-    int condNeg = signX & ((x >> 30) + ~0);
-    int overflow = (cond1 | condPos | condNeg) >> 31;
+    int fourX = x << 2;
+    int five = fourX + x;
+    int sign = x >> 31;
 
-    int valTmin = 1 << 31;
-    int valTmax = ~valTmin;
-    int saturateVal = (signX & valTmin) | (~signX & valTmax);
-    return (overflow & saturateVal) | (~overflow & fiveX);
+    int overflow4 = (x >> 29) ^ sign;
+    int overflowAdd = ((fourX ^ five) & (x ^ five)) >> 31;
+    int overflow = !!(overflow4 | overflowAdd);
+
+    int max = ~(1 << 31);
+    int min = 1 << 31;
+    int saturated = (sign & min) | (~sign & max);
+
+    int mask = (~overflow) + 1;
+
+    return (mask & saturated) | (~mask & five);
 
 }
 
@@ -418,72 +421,23 @@ int classifyAdd3(int x, int y, int z) {
  *   Rating: 7
  */
 unsigned floatScaleThreeHalves(unsigned uf) {
-unsigned s_bit = uf & 0x80000000u;
-    unsigned exp_field = (uf >> 23) & 0xFFu;
-    unsigned frac_field = uf & 0x7FFFFFu;
-
-    if (exp_field == 0xFFu)
-        return uf;
-    if (exp_field == 0u && frac_field == 0u)
-        return uf;
-
-    unsigned mant; int exp_val;
-    if (exp_field == 0u) {
-        mant = frac_field;
-        exp_val = -126;
-        while ((mant & 0x800000u) == 0) {
-            mant <<= 1;
-            exp_val -= 1;
-        }
-    } else {
-        mant = frac_field;
-        exp_val = (int)exp_field - 127;
+unsigned s = uf & 0x80000000u, exp = (uf>>23)&0xFFu, frac = uf&0x7FFFFFu;
+    if(exp==0xFFu||(exp==0u&&!frac)) return uf;
+    unsigned mant = frac; int e = exp?((int)exp-127):-126;
+    if(!exp) while(!(mant&0x800000u)) { mant<<=1; e--; }
+    unsigned prod = ((1u<<23)|mant)*3u, rnd=0u; e--;
+    for(;prod>=(1u<<24);prod>>=1,e++) rnd=(rnd<<1)|(prod&1u);
+    unsigned newFrac = prod&0x7FFFFFu;
+    if((rnd&1u)&&((newFrac&1u)||(rnd>>1)))
+        { newFrac++; if(newFrac>=(1u<<23)) {newFrac=0;e++;} }
+    int eB = e+127;
+    if(eB<=0){
+        if(eB<-23) return s;
+        int sh=1-eB; unsigned dm=prod>>sh, lost=prod&((1u<<sh)-1);
+        if(lost>(1u<<(sh-1))||(lost==(1u<<(sh-1))&&(dm&1u))) dm++;
+        return dm>=(1u<<23)?(s|(1u<<23)|(dm&0x7FFFFFu)):(s|dm);
     }
-
-    unsigned full_mant = (1u << 23) | mant;
-    unsigned product = full_mant + full_mant + full_mant;
-    exp_val = exp_val - 1;
-    unsigned round_buf = 0;
-
-    while (product >= (1u << 24)) {
-        round_buf = (round_buf << 1) | (product & 1u);
-        product >>= 1;
-        exp_val += 1;
-    }
-
-    unsigned new_frac = product & 0x7FFFFFu;
-    unsigned lsb_frac = new_frac & 1u;
-    unsigned guard_bit = round_buf & 1u;
-    unsigned sticky_bit = round_buf >> 1;
-
-    if (guard_bit && (lsb_frac || sticky_bit)) {
-        new_frac += 1u;
-    }
-    if (new_frac >= (1u << 23)) {
-        new_frac = 0u;
-        exp_val += 1;
-    }
-
-    exp_val = exp_val + 127;
-    if (exp_val <= 0) {
-        if (exp_val < -23)
-            return s_bit;
-        int shift_amt = 1 - exp_val;
-        unsigned denorm_mant = product >> shift_amt;
-        unsigned discarded = product & ((1u << shift_amt) - 1);
-        unsigned half_val = 1u << (shift_amt - 1);
-        if ((discarded > half_val) || (discarded == half_val && (denorm_mant & 1u))) {
-            denorm_mant += 1u;
-        }
-        if (denorm_mant >= (1u << 23)) {
-            return s_bit | (1u << 23) | (denorm_mant & 0x7FFFFFu);
-        }
-        return s_bit | denorm_mant;
-    }
-    if (exp_val >= 0xFF) {
-        return s_bit | (0xFFu << 23);
-    }
-    return s_bit | (((unsigned)exp_val) << 23) | new_frac;
+    return eB>=0xFF?(s|(0xFFu<<23)):(s|(((unsigned)eB)<<23)|newFrac);
 }
 
 
