@@ -263,7 +263,7 @@ int oddParity(int x) {
  *   Rating: 5
  */
 int rotateRightBits(int x, int n) {
-    return (x >> n) | ((x << (32 + (~n + 1))) & ~((1 << 31) >> n) << 1);
+    return ((x >> n) & ~(((1 << 31) >> n) << 1)) | ((x & ((1 << n) + ~0)) << (32 + (~n + 1)));
 }
 
 // P10
@@ -279,14 +279,17 @@ int rotateRightBits(int x, int n) {
  */
 int roundEvenPow2(int x, int n) {
     int shift = 1 << n;
-    int half = shift >> 1;
-    int mask = shift + (~1 + 1);
-    int rem = x & mask;
-    int base = x & ~mask;
-    int isHalf = !(rem ^ half);
-    int qOdd = (base >> n) & 1;
-    int add = ((rem > half) | (isHalf & qOdd)) & shift;
-    return base + add;
+int half = shift >> 1;
+int mask = shift + (~1 + 1);
+int rem = x & mask;
+int base = x & ~mask;
+int diff = rem + (~half + 1);
+int remGtHalf = !(diff >> 31) & !!diff;
+int isHalf = !diff;
+int qodd = (base >> n) & 1;
+int add = (remGtHalf | (isHalf & qodd)) & shift;
+return base + add;
+
 }
 
 // P11
