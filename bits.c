@@ -210,7 +210,8 @@ int logicalShift(int x, int n) {
  *   Rating: 4
  */
 int swapNibblePairs(int x) {
-  return ((x & (0xF0 | ((0xF0 | (0xF0 << 8)) << 16))) >> 4) | ((x & ~(0xF0 | ((0xF0 | ((0xF0 | (0xF0 << 8)) << 16))) << 4);
+  return ((x & ((0xF0 | (0xF0 << 8)) | ((0xF0 | (0xF0 << 8)) << 16))) >> 4) | ((x & ~((0xF0 | (0xF0 << 8)) | ((0xF0 | (0xF0 << 8)) << 16))) << 4);
+
 }
 
 // P7
@@ -398,7 +399,6 @@ if(newexp>=0xff)return sign|0x7f800000;
 return sign|(newexp<<23)|newfrac;
 }
 
-}
 
 // P16
 /* 
@@ -432,7 +432,6 @@ if(exp>=0xff)return sign|0x7f800000;
 return sign|(exp<<23)|frac;
 }
 
-}
 
 // P17
 /*
@@ -462,7 +461,6 @@ if(frac>>23){frac=frac&0x7fffff;exp=exp+1;}
 return (sign<<31)|(exp<<23)|frac;
 }
 
-}
 
 
 
@@ -483,7 +481,6 @@ x=x+(x>>16);
 return x&0x3f;
 }
 
-}
 
 // P19
 /*
@@ -504,4 +501,3 @@ x=((x&0xaaaaaaaa)>>1)|((x&0x55555555)<<1);
 return x;
 }
 
-}
