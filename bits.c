@@ -421,23 +421,26 @@ int classifyAdd3(int x, int y, int z) {
  *   Rating: 7
  */
 unsigned floatScaleThreeHalves(unsigned uf) {
-unsigned s = uf & 0x80000000u, exp = (uf>>23)&0xFFu, frac = uf&0x7FFFFFu;
-    if(exp==0xFFu||(exp==0u&&!frac)) return uf;
-    unsigned mant = frac; int e = exp?((int)exp-127):-126;
-    if(!exp) while(!(mant&0x800000u)) { mant<<=1; e--; }
-    unsigned prod = ((1u<<23)|mant)*3u, rnd=0u; e--;
-    for(;prod>=(1u<<24);prod>>=1,e++) rnd=(rnd<<1)|(prod&1u);
-    unsigned newFrac = prod&0x7FFFFFu;
-    if((rnd&1u)&&((newFrac&1u)||(rnd>>1)))
-        { newFrac++; if(newFrac>=(1u<<23)) {newFrac=0;e++;} }
-    int eB = e+127;
-    if(eB<=0){
-        if(eB<-23) return s;
-        int sh=1-eB; unsigned dm=prod>>sh, lost=prod&((1u<<sh)-1);
-        if(lost>(1u<<(sh-1))||(lost==(1u<<(sh-1))&&(dm&1u))) dm++;
-        return dm>=(1u<<23)?(s|(1u<<23)|(dm&0x7FFFFFu)):(s|dm);
-    }
-    return eB>=0xFF?(s|(0xFFu<<23)):(s|(((unsigned)eB)<<23)|newFrac);
+unsigned sign = uf & 0x80000000u;
+unsigned exp = (uf >> 23) & 0xFFu;
+unsigned frac = uf & 0x7FFFFFu;
+if(exp==0xFFu||(exp==0u&&frac==0u)) return uf;
+unsigned m; int e;
+if(exp==0u){for(m=frac,e=-126;!(m&0x800000u);m<<=1,e--);}
+else {m=frac; e=exp-127;}
+unsigned mant=(1u<<23)|m, prod=mant+mant+mant, rBits=0;
+e--;
+for(;prod>=(1u<<24);prod>>=1,e++) rBits=(rBits<<1)|(prod&1u);
+unsigned frac2=prod&0x7FFFFFu;
+if((rBits&1u)&&((frac2&1u)||(rBits>>1))) {frac2++; if(frac2>=(1u<<23)){frac2=0;e++;}}
+e+=127;
+if(e<=0){
+    if(e<-23) return sign;
+    int shift=1-e;unsigned dm=prod>>shift,lost=prod&((1u<<shift)-1);
+    if(lost>(1u<<(shift-1))||(lost==(1u<<(shift-1))&&(dm&1u))) dm++;
+    return dm>=(1u<<23)?(sign|(1u<<23)|(dm&0x7FFFFFu)):(sign|dm);
+}
+return e>=0xFF?(sign|(0xFFu<<23)):(sign|(e<<23)|frac2);
 }
 
 
