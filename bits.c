@@ -209,10 +209,11 @@ int logicalShift(int x, int n) {
  *   Max ops: 18
  *   Rating: 4
  */
-int swapNibblePairs(int x) {
-  int a = 0xF0 | (0xF0 << 8);
-int b = a | (a << 16);
-return ((x & b) >> 4) | ((x & ~b) << 4);
+int a = 0xF0;
+a = a | (a << 8);
+a = a | (a << 16);
+return ((x & a) >> 4) | ((x & ~a) << 4);
+
 
 
 }
