@@ -329,12 +329,25 @@ int midpointTowardFirst(int x, int y) {
  *   Rating: 7
  */
 int isBetweenEitherOrder(int x, int a, int b) {
-     int aLessB = ((a - b) >> 31) & 1;
-    int low = aLessB ? a : b;
-    int high = aLessB ? b : a;
-    int geLow = !((low - x) >> 31);
-    int leHigh = !((x - high) >> 31);
-    return geLow & leHigh;
+     int subAB = a + ~b + 1;
+    int signXorAB = (a ^ b) >> 31;
+    int aGreatEqualB = (signXorAB & ~(a >> 31)) | (~signXorAB & ~(subAB >> 31));
+    int swapFlag = ~aGreatEqualB;
+    int xorAB = a ^ b;
+    int lower = b ^ (xorAB & swapFlag);
+    int upper = a ^ (xorAB & swapFlag);
+
+    int xorXL = (x ^ lower);
+    int signXL = xorXL >> 31;
+    int subXL = x + ~lower + 1;
+    int geLower = ~((signXL & (x >> 31)) | (~signXL & (subXL >> 31))) & 1;
+
+    int xorUX = (upper ^ x);
+    int signUX = xorUX >> 31;
+    int subUX = upper + ~x + 1;
+    int upperGreatEqX = ~((signUX & (upper >> 31)) | (~signUX & (subUX >> 31))) & 1;
+
+    return geLower & upperGreatEqX;
 
 }
 
@@ -348,14 +361,18 @@ int isBetweenEitherOrder(int x, int a, int b) {
  *   Rating: 7
  */
 int mul5Sat(int x) {
- int t=x<<2;
-int res=t+x;
-int sign=x>>31;
-int ovPos=!sign&((t^res)>>31);
-int ovNeg=sign&((t^res)>>31);
-int sat=(ovPos&0x7fffffff)|(ovNeg&0x80000000);
-int mask=ovPos|ovNeg;
-return (res&~mask)|sat;
+ int twoX = x + x;
+    int fiveX = twoX + (x << 2);
+    int signX = x >> 31;
+    int cond1 = ((x ^ fiveX) >> 31);
+    int condPos = (~signX) & ((x >> 30) + ~0);
+    int condNeg = signX & ((x >> 30) + ~0);
+    int overflow = (cond1 | condPos | condNeg) >> 31;
+
+    int valTmin = 1 << 31;
+    int valTmax = ~valTmin;
+    int saturateVal = (signX & valTmin) | (~signX & valTmax);
+    return (overflow & saturateVal) | (~overflow & fiveX);
 
 }
 
@@ -369,15 +386,18 @@ return (res&~mask)|sat;
  *   Rating: 7
  */
 int classifyAdd3(int x, int y, int z) {
-  int s1=x+y;
-int ov1=((x^s1)&(y^s1))>>31;
-int s2=s1+z;
-int ov2=((s1^s2)&(z^s2))>>31;
-int totalOv=ov1|ov2;
-int signSum=s2>>31;
-int posOv=totalOv&!signSum;
-int negOv=totalOv&signSum;
-return posOv|(negOv<<1);
+  int sumXY = x + y;
+    int total = sumXY + z;
+
+    int ovf1Neg = ((x & y & ~sumXY)) >> 31;
+    int ovf1Pos = ((~x & ~y & sumXY)) >> 31;
+    int ovf2Neg = ((sumXY & z & ~total)) >> 31;
+    int ovf2Pos = ((~sumXY & ~z & total)) >> 31;
+
+    int posOverflow = (ovf1Pos & ~ovf2Neg) | (~ovf1Neg & ovf2Pos);
+    int negOverflow = (ovf1Neg & ~ovf2Pos) | (~ovf1Pos & ovf2Neg);
+
+    return (posOverflow & 1) | (negOverflow + (~0) + 1);
 
 }
 
@@ -395,20 +415,72 @@ return posOv|(negOv<<1);
  *   Rating: 7
  */
 unsigned floatScaleThreeHalves(unsigned uf) {
-unsigned sign=uf&0x80000000;
-unsigned exp=(uf>>23)&0xff;
-unsigned frac=uf&0x007fffff;
-if(exp==0xff)return uf;
-if(exp==0){
-frac=frac+frac+(frac>>1);
-if(frac&0x00800000){exp=1;frac&=0x007fffff;}
-return sign|(exp<<23)|frac;
-}
-unsigned newexp=exp+1;
-unsigned newfrac=frac+(frac>>1);
-if(newfrac&0x00800000){newexp++;newfrac&=0x007fffff;}
-if(newexp>=0xff)return sign|0x7f800000;
-return sign|(newexp<<23)|newfrac;
+unsigned s_bit = uf & 0x80000000u;
+    unsigned exp_field = (uf >> 23) & 0xFFu;
+    unsigned frac_field = uf & 0x7FFFFFu;
+
+    if (exp_field == 0xFFu)
+        return uf;
+    if (exp_field == 0u && frac_field == 0u)
+        return uf;
+
+    unsigned mant; int exp_val;
+    if (exp_field == 0u) {
+        mant = frac_field;
+        exp_val = -126;
+        while ((mant & 0x800000u) == 0) {
+            mant <<= 1;
+            exp_val -= 1;
+        }
+    } else {
+        mant = frac_field;
+        exp_val = (int)exp_field - 127;
+    }
+
+    unsigned full_mant = (1u << 23) | mant;
+    unsigned product = full_mant + full_mant + full_mant;
+    exp_val = exp_val - 1;
+    unsigned round_buf = 0;
+
+    while (product >= (1u << 24)) {
+        round_buf = (round_buf << 1) | (product & 1u);
+        product >>= 1;
+        exp_val += 1;
+    }
+
+    unsigned new_frac = product & 0x7FFFFFu;
+    unsigned lsb_frac = new_frac & 1u;
+    unsigned guard_bit = round_buf & 1u;
+    unsigned sticky_bit = round_buf >> 1;
+
+    if (guard_bit && (lsb_frac || sticky_bit)) {
+        new_frac += 1u;
+    }
+    if (new_frac >= (1u << 23)) {
+        new_frac = 0u;
+        exp_val += 1;
+    }
+
+    exp_val = exp_val + 127;
+    if (exp_val <= 0) {
+        if (exp_val < -23)
+            return s_bit;
+        int shift_amt = 1 - exp_val;
+        unsigned denorm_mant = product >> shift_amt;
+        unsigned discarded = product & ((1u << shift_amt) - 1);
+        unsigned half_val = 1u << (shift_amt - 1);
+        if ((discarded > half_val) || (discarded == half_val && (denorm_mant & 1u))) {
+            denorm_mant += 1u;
+        }
+        if (denorm_mant >= (1u << 23)) {
+            return s_bit | (1u << 23) | (denorm_mant & 0x7FFFFFu);
+        }
+        return s_bit | denorm_mant;
+    }
+    if (exp_val >= 0xFF) {
+        return s_bit | (0xFFu << 23);
+    }
+    return s_bit | (((unsigned)exp_val) << 23) | new_frac;
 }
 
 
@@ -425,23 +497,39 @@ return sign|(newexp<<23)|newfrac;
  *   Rating: 10
  */
 unsigned floatRoundEven(unsigned uf) {
-unsigned sign=uf&0x80000000;
-unsigned exp=(uf>>23)&0xff;
-unsigned frac=uf&0x007fffff;
-if(exp>=0x7f800000)return uf;
-if(exp<127)return sign;
-int shift=exp-127;
-if(shift>=23)return uf;
-unsigned mask=(1<<shift)-1;
-unsigned half=1<<(shift-1);
-unsigned rem=frac&mask;
-frac=frac&~mask;
-if(rem>half||(rem==half&&(frac&half))){
-frac+=1<<shift;
-if(frac&0x00800000){exp++;frac&=0x007fffff;}
-}
-if(exp>=0xff)return sign|0x7f800000;
-return sign|(exp<<23)|frac;
+unsigned sign_bit = uf & 0x80000000u;
+    unsigned exponent = (uf >> 23) & 0xFFu;
+    unsigned fraction = uf & 0x7FFFFFu;
+
+    if (exponent == 0xFFu)
+        return uf;
+    if (exponent == 0u)
+        return sign_bit;
+
+    int e_real = (int)exponent - 127;
+    if (e_real < 0) {
+        if (e_real == -1 && fraction > 0u)
+            return sign_bit | (127u << 23);
+        return sign_bit;
+    }
+    if (e_real >= 23)
+        return uf;
+
+    int shift_amt = 23 - e_real;
+    unsigned mask_trunc = (1u << shift_amt) - 1;
+    unsigned half_point = 1u << (shift_amt - 1);
+    unsigned leftover = fraction & mask_trunc;
+    unsigned truncated_frac = fraction & (~mask_trunc);
+
+    unsigned lsb_val = (e_real == 0) ? 1u : ((fraction >> (23 - e_real)) & 1u);
+    if ((leftover > half_point) || (leftover == half_point && lsb_val)) {
+        truncated_frac += (1u << shift_amt);
+    }
+    if (truncated_frac >= (1u << 23)) {
+        truncated_frac = 0u;
+        exponent += 1u;
+    }
+    return sign_bit | (exponent << 23) | truncated_frac;
 }
 
 
@@ -456,21 +544,36 @@ return sign|(exp<<23)|frac;
  *   Rating: 10
  */
 unsigned float_i2f(int x) {
-unsigned sign,exp,frac,absx,shift,round,sticky;
-if(x==0)return 0;
-sign=x>>31;
-absx=sign?~x+1:x;
-shift=0;
-while((absx>>shift)!=1)shift++;
-exp=127+shift;
-frac=(absx^(1<<shift))<<(23-shift);
-round=frac&1;
-sticky=frac&((1<<shift)-1);
-frac=frac>>1;
-if(round&&sticky)frac=frac+1;
-else if(round&&!sticky&&(frac&1))frac=frac+1;
-if(frac>>23){frac=frac&0x7fffff;exp=exp+1;}
-return (sign<<31)|(exp<<23)|frac;
+if (x == 0)
+        return 0u;
+    if (x == 0x80000000)
+        return 0xCF000000u;
+
+    unsigned s_out = x & 0x80000000u;
+    unsigned abs_val;
+    if (x < 0)
+        abs_val = (unsigned)(-x);
+    else
+        abs_val = (unsigned)x;
+
+    int exp_cnt = 0;
+    while ((abs_val & 0x80000000u) == 0) {
+        abs_val <<= 1;
+        exp_cnt -= 1;
+    }
+    exp_cnt = exp_cnt + 31;
+
+    unsigned frac_out = (abs_val >> 8) & 0x7FFFFFu;
+    unsigned tail_byte = abs_val & 0xFFu;
+
+    if ((tail_byte > 0x80u) || (tail_byte == 0x80u && (frac_out & 1u))) {
+        frac_out += 1u;
+        if (frac_out >= 0x800000u) {
+            frac_out = 0u;
+            exp_cnt += 1;
+        }
+    }
+    return s_out | (((unsigned)(exp_cnt + 127)) << 23) | frac_out;
 }
 
 
@@ -485,12 +588,26 @@ return (sign<<31)|(exp<<23)|frac;
  *   Rating: 10
  */
 int bitCount(int x) {
-x=x-((x>>1)&0x55555555);
-x=(x&0x33333333)+((x>>2)&0x33333333);
-x=(x+(x>>4))&0x0f0f0f0f;
-x=x+(x>>8);
-x=x+(x>>16);
-return x&0x3f;
+int m_0x55 = 0x55;
+    int m_0x33 = 0x33;
+    int m_0x0F = 0x0F;
+
+    m_0x55 = m_0x55 | (m_0x55 << 8);
+    m_0x55 = m_0x55 | (m_0x55 << 16);
+
+    m_0x33 = m_0x33 | (m_0x33 << 8);
+    m_0x33 = m_0x33 | (m_0x33 << 16);
+
+    m_0x0F = m_0x0F | (m_0x0F << 8);
+    m_0x0F = m_0x0F | (m_0x0F << 16);
+
+    x = (x & m_0x55) + ((x >> 1) & m_0x55);
+    x = (x & m_0x33) + ((x >> 2) & m_0x33);
+    x = (x & m_0x0F) + ((x >> 4) & m_0x0F);
+
+    x = x + (x >> 8);
+    x = x + (x >> 16);
+    return x & 0x3F;
 }
 
 
@@ -505,11 +622,26 @@ return x&0x3f;
  */
 int bitReverse(int x)
 {
-x=(x>>16)|(x<<16);
-x=((x&0xff00ff00)>>8)|((x&0x00ff00ff)<<8);
-x=((x&0xf0f0f0f0)>>4)|((x&0x0f0f0f0f)<<4);
-x=((x&0xcccccccc)>>2)|((x&0x33333333)<<2);
-x=((x&0xaaaaaaaa)>>1)|((x&0x55555555)<<1);
-return x;
+int mask1 = 0x55 | (0x55 << 8);
+    mask1 = mask1 | (mask1 << 16);
+
+    int mask2 = 0x33 | (0x33 << 8);
+    mask2 = mask2 | (mask2 << 16);
+
+    int mask4 = 0x0F | (0x0F << 8);
+    mask4 = mask4 | (mask4 << 16);
+
+    int mask8lo = 0xFF | (0xFF << 16);
+    int mask8hi = mask8lo << 8;
+
+    int mask16lo = 0xFF | (0xFF << 8);
+    int mask16hi = mask16lo << 16;
+
+    x = ((x >> 1) & mask1) | ((x & mask1) << 1);
+    x = ((x >> 2) & mask2) | ((x & mask2) << 2);
+    x = ((x >> 4) & mask4) | ((x & mask4) << 4);
+    x = ((x >> 8) & mask8lo) | ((x << 8) & mask8hi);
+    x = ((x >> 16) & mask16lo) | ((x << 16) & mask16hi);
+    return x;
 }
 
