@@ -210,7 +210,10 @@ int logicalShift(int x, int n) {
  *   Rating: 4
  */
 int swapNibblePairs(int x) {
-  return ((x & ((0xF0 | (0xF0 << 8)) | ((0xF0 | (0xF0 << 8)) << 16))) >> 4) | ((x & ~((0xF0 | (0xF0 << 8)) | ((0xF0 | (0xF0 << 8)) << 16))) << 4);
+  int a = 0xF0 | (0xF0 << 8);
+int b = a | (a << 16);
+return ((x & b) >> 4) | ((x & ~b) << 4);
+
 
 }
 
